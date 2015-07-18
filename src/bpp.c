@@ -27,8 +27,8 @@ int main(int argc, char *argv[]){
 	}
 	//Variables defining the compiler's behaviour
 	uint8_t keepC = 0;
-	char *outName;
-	char *gccArgs = malloc(0);
+	char *outName = malloc(1);//Malloc 1s just to put the values on the heap rather than the stack
+	char *gccArgs = malloc(1);
 	uint8_t defaultOutName = 1;
 	uint64_t tapeLen = 30000;//Because it can be reassigned with strtol, it must be able to fit a long value. Can store values greater than available
 				 //memory, so if you want to run brainf**k++ on a supercomputer, that's your problem, not mine
@@ -36,42 +36,70 @@ int main(int argc, char *argv[]){
 
 
 	//Parse command line arguments
-	uint8_t reservedForGcc = 0;//So that when -g comes up, further commands are not parsed by this program.
+	uint8_t reservedForGcc = 0;//So that when -g comes up, further commands are not parsed by this program. Also useful to see if additional gcc args are present
 	for(int i = 2; i < argc; i++){//Find out which arguments are in use, starts at 2 because 0 is program call, and 1 is either help or the source file
 		if(!reservedForGcc){
 			if(argv[i][0] == '-'){//If we're looking at an option block
 				if(!memcmp(argv[i], "-o", 3)){
 					defaultOutName = 0;
-					outName = argv[i+1];
-					i++;//Skip over the next argument as it is a file name
+					if(argv[i+1]){
+						outName = realloc(outName, sizeof(argv[i+1]));
+						outName = strcpy(outName, argv[i+1]);
+						i++;//Skip over the next argument as it is a file name
+					}
+					else{
+						puts("Error: Invalid file name");
+						free(outName);
+						free(gccArgs);
+						return 1;
+					}
 				}
 				else if(!memcmp(argv[i], "-m", 3)){
 					char *storageChar;//For strto to store stuff
 					tapeLen = strtol(argv[i+1], &storageChar, 10);
 					if(!tapeLen || errno){
 						puts("Error: Invalid tape length");
+						free(outName);
+						free(gccArgs);
 						return 1;
 					}
 					i++;//Skip over the next argument as it is the memory size
 
 				}else if (memchr(argv[i], 'c', 5)) keepC = 1;//Only checks 5 bytes as there are only 5 valid args and most shouldn't be together
-				else if (!memcmp(argv[i], "-g", 3)) reservedForGcc = 1;//If you've called -g, the rest of the args must belong to gcc
-
+				else if (!memcmp(argv[i], "-g", 3)){
+					reservedForGcc = 1;//If you've called -g, the rest of the args must belong to gcc
+					if(argv[i+1]){
+						gccArgs = realloc(gccArgs, sizeof(argv[i+1]));
+						i++;
+					}
+					else{
+						puts("Error: No gcc arguments following -g option");
+						free(outName);
+						free(gccArgs);
+						return 1;
+					}
+				}
 			}
 
 		}else{
-			gccArgs = realloc(gccArgs, sizeof(*gccArgs) + sizeof(*argv[i]) + 1);//+1 for the space
-			gccArgs = strcat(gccArgs, " ");//Put spaces between each arg so that gcc understands
+			gccArgs = realloc(gccArgs, sizeof(gccArgs) + sizeof(argv[i]) + 1);//+1 for the space
+			gccArgs = strcat(gccArgs, " ");//Put spaces between each arg so that gcc understands. Valgrind gets angry here.
+							//Reason: conditional move... depends on uninitialised value(s), no actual problem
 			gccArgs = strcat(gccArgs, argv[i]);//Then stick the latest arg on the end
 
 		}
 	}
 
 
-
 	FILE *sourceFile = fopen(argv[1], "r");
 	FILE *outFile = fopen(defaultOutName? strcat(argv[1], ".c") : outName, "w+");
-
+	if(!sourceFile){
+		puts("Error: Invalid source file");
+		fclose(outFile);
+		free(outName);
+		free(gccArgs);
+		return 1;
+	}
 	createFileHead(outFile, tapeLen);
 	createFileBody(sourceFile, outFile);
 	createFileFoot(outFile);
@@ -79,10 +107,11 @@ int main(int argc, char *argv[]){
 	//We're done with the files. Close source to reduce memory usage, close out to commit changes
 	fclose(sourceFile);
 	fclose(outFile);
+	char *gccCall = malloc(3 + sizeof(gccArgs));
+	gccCall = "gcc";
+	gccCall = strcat(gccCall, gccArgs);//Segfault here
 
-
-
-
+	free(outName);
 	free(gccArgs);
 	return 0;
 }
@@ -161,13 +190,13 @@ void createFileFoot(FILE *outFile){
 
 
 	fputs("static void incPoint(){\n", outFile);
-		fputs("\tif (activeCell == tapeEnd){ activeCell = tapeStart;\n puts(\"Tape wrapped up\");}\n", outFile);//So the tape wraps, as per the specification
+		fputs("\tif (activeCell == tapeEnd) activeCell = tapeStart;\n", outFile);//So the tape wraps, as per the specification
 		fputs("\telse ++activeCell;\n", outFile);
 	fputs("}\n", outFile);
 
 
 	fputs("static void decPoint(){\n", outFile);
-		fputs("\tif (activeCell == tapeStart){ activeCell = tapeEnd;\n puts(\"Tape wrapped down\");}\n", outFile);//So the tape wraps
+		fputs("\tif (activeCell == tapeStart) activeCell = tapeEnd;\n", outFile);//So the tape wraps
 		fputs("\telse --activeCell;\n", outFile);
 	fputs("}\n", outFile);
 
