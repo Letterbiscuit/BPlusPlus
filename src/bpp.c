@@ -5,9 +5,9 @@
 #include <string.h>//For memcmp
 #include <errno.h>//For errors with strtol
 
-void createTemplateHead(FILE *outFile, uint64_t tapeLen);
-void createTemplateFoot(FILE *outFile);
-
+void createFileHead(FILE *outFile, uint64_t tapeLen);
+void createFileBody(FILE *sourceFile, FILE *outFile);
+void createFileFoot(FILE *outFile);
 
 
 
@@ -72,9 +72,9 @@ int main(int argc, char *argv[]){
 	FILE *sourceFile = fopen(argv[1], "r");
 	FILE *outFile = fopen(defaultOutName? strcat(argv[1], ".c") : outName, "w+");
 
-	createTemplateHead(outFile, tapeLen);
-
-	createTemplateFoot(outFile);
+	createFileHead(outFile, tapeLen);
+	createFileBody(sourceFile, outFile);
+	createFileFoot(outFile);
 
 	//We're done with the files. Close source to reduce memory usage, close out to commit changes
 	fclose(sourceFile);
@@ -89,7 +89,7 @@ int main(int argc, char *argv[]){
 
 
 
-void createTemplateHead(FILE *outFile, uint64_t tapeLen){
+void createFileHead(FILE *outFile, uint64_t tapeLen){
 	fputs("#include <stdio.h>\n", outFile);//So bf can print
 	fputs("#include <stdint.h>\n", outFile);//So bf can use uint8_t
 	fputs("#include <stdlib.h>\n", outFile);//So the tape can be calloc-ed rather than kept in the call stack - less dangerous in case of overflow
@@ -108,12 +108,53 @@ void createTemplateHead(FILE *outFile, uint64_t tapeLen){
 	fputs("int main(int argc, char *argv[]){\n", outFile);
 		fputs("\ttapeStart = calloc(tapeLen, 1);\n", outFile);
 		fputs("\ttapeEnd = tapeStart + tapeLen-1;\n", outFile);
+		fputs("\tactiveCell = tapeStart;\n", outFile);
 
 }
 
 
+void createFileBody(FILE *sourceFile, FILE *outFile){
+	char c = fgetc(sourceFile);
+	while(c != EOF){
+		switch(c){
+			case '>':
+				fputs("\tincPoint();\n", outFile);
+				break;
+			case '<':
+				fputs("\tdecPoint();\n", outFile);
+				break;
+			case '+':
+				fputs("\tincVal();\n", outFile);
+				break;
+			case '-':
+				fputs("\tdecVal();\n", outFile);
+				break;
+			case ',':
+				fputs("\t*activeCell = getchar();\n", outFile);
+				break;
+			case '.':
+				fputs("\tputchar(*activeCell);\n", outFile);
+				break;
+			case '[':
+				fputs("\twhile(*activeCell){\n", outFile);
+				break;
+			case ']':
+				fputs("\t}\n", outFile);
+			default:
+				break;
 
-void createTemplateFoot(FILE *outFile){
+		}
+
+		c = fgetc(sourceFile);
+	}
+
+
+
+
+}
+
+
+void createFileFoot(FILE *outFile){
 	fputs("\treturn 0;\n", outFile);
 	fputs("}\n", outFile);//Ends main
 
