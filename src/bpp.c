@@ -95,15 +95,15 @@ void createFileHead(FILE *outFile, uint64_t tapeLen){
 	fputs("#include <stdlib.h>\n", outFile);//So the tape can be calloc-ed rather than kept in the call stack - less dangerous in case of overflow
 						//calloc is used here to initialise to 0
 	//Globally visible tape start, end, length and current cell
-	fputs("uint8_t *tapeStart;\n", outFile);
-	fputs("uint8_t *tapeEnd;\n", outFile);
-	fprintf(outFile, "uint64_t tapeLen = %lu;\n", tapeLen);
-	fputs("uint8_t *activeCell;\n", outFile);
+	fputs("static uint8_t *tapeStart;\n", outFile);
+	fputs("static uint8_t *tapeEnd;\n", outFile);
+	fprintf(outFile, "static uint64_t tapeLen = %lu;\n", tapeLen);
+	fputs("static uint8_t *activeCell;\n", outFile);
 	//Function prototypes just because it's good practise
-	fputs("void incPoint();\n", outFile);//>
-	fputs("void decPoint();\n", outFile);//<
-	fputs("void incVal();\n", outFile);//+
-	fputs("void decVal();\n", outFile);//-
+	fputs("static void incPoint();\n", outFile);//>
+	fputs("static void decPoint();\n", outFile);//<
+	fputs("static void incVal();\n", outFile);//+
+	fputs("static void decVal();\n", outFile);//-
 	//[ ] , and . will be handled in main as while , getchar and putchar
 	fputs("int main(int argc, char *argv[]){\n", outFile);
 		fputs("\ttapeStart = calloc(tapeLen, 1);\n", outFile);
@@ -155,27 +155,28 @@ void createFileBody(FILE *sourceFile, FILE *outFile){
 
 
 void createFileFoot(FILE *outFile){
+	fputs("\tfree(tapeStart);\n", outFile);
 	fputs("\treturn 0;\n", outFile);
 	fputs("}\n", outFile);//Ends main
 
 
-	fputs("void incPoint(){\n", outFile);
+	fputs("static void incPoint(){\n", outFile);
 		fputs("\tif (activeCell == tapeEnd) activeCell = tapeStart;\n", outFile);//So the tape wraps, as per the specification
-		fputs("\telse activeCell++;\n", outFile);
+		fputs("\telse --activeCell;\n", outFile);
 	fputs("}\n", outFile);
 
 
-	fputs("void decPoint(){\n", outFile);
+	fputs("static void decPoint(){\n", outFile);
 		fputs("\tif (activeCell == tapeStart) activeCell = tapeEnd;\n", outFile);//So the tape wraps
-		fputs("\telse activeCell--;\n", outFile);
+		fputs("\telse --activeCell;\n", outFile);
 	fputs("}\n", outFile);
 
-	fputs("void incVal(){\n", outFile);
-		fputs("\t*activeCell++;\n", outFile);
+	fputs("static void incVal(){\n", outFile);
+		fputs("\t++*activeCell;\n", outFile);
 	fputs("}\n", outFile);
 
-	fputs("void decCal(){\n", outFile);
-		fputs("\t*activeCell--;\n", outFile);
+	fputs("static void decCal(){\n", outFile);
+		fputs("\t--*activeCell;\n", outFile);
 	fputs("}\n", outFile);
 
 }
