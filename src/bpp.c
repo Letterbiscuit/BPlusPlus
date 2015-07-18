@@ -161,13 +161,13 @@ void createFileFoot(FILE *outFile){
 
 
 	fputs("static void incPoint(){\n", outFile);
-		fputs("\tif (activeCell == tapeEnd) activeCell = tapeStart;\n", outFile);//So the tape wraps, as per the specification
-		fputs("\telse --activeCell;\n", outFile);
+		fputs("\tif (activeCell == tapeEnd){ activeCell = tapeStart;\n puts(\"Tape wrapped up\");}\n", outFile);//So the tape wraps, as per the specification
+		fputs("\telse ++activeCell;\n", outFile);
 	fputs("}\n", outFile);
 
 
 	fputs("static void decPoint(){\n", outFile);
-		fputs("\tif (activeCell == tapeStart) activeCell = tapeEnd;\n", outFile);//So the tape wraps
+		fputs("\tif (activeCell == tapeStart){ activeCell = tapeEnd;\n puts(\"Tape wrapped down\");}\n", outFile);//So the tape wraps
 		fputs("\telse --activeCell;\n", outFile);
 	fputs("}\n", outFile);
 
@@ -175,7 +175,7 @@ void createFileFoot(FILE *outFile){
 		fputs("\t++*activeCell;\n", outFile);
 	fputs("}\n", outFile);
 
-	fputs("static void decCal(){\n", outFile);
+	fputs("static void decVal(){\n", outFile);
 		fputs("\t--*activeCell;\n", outFile);
 	fputs("}\n", outFile);
 
