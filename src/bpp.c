@@ -99,7 +99,6 @@ int main(int argc, char *argv[]){
 
 
 	FILE *sourceFile = fopen(argv[1], "r");
-	printf("target file: %s\n", argv[1]);
 	if(sourceFile == NULL){
 		puts("Error: Invalid source file");
 		free(outName);
@@ -125,17 +124,19 @@ int main(int argc, char *argv[]){
 
 	strcpy(gccCall, gccRoot);//Build up the gcc system
 	strcat(gccCall, outputFileName);
+	strcat(gccCall, " ");
+	strcat(gccCall, gccArgs);
 	strcat(gccCall, " -o ");//Separate the dynamic args and the file name, declare output file
 	strncpy(gccBuffer, outputFileName, sizeof(outputFileName) - 4);//-4 because of slightly generous buffer, takes off file extension
-	printf("gccBuffer: %s\n", gccBuffer);
 	strcat(gccCall, gccBuffer);
-	strcat(gccCall, gccArgs);
 
-	printf("gcc call: %s\n", gccCall);
 
 	system(gccCall);
 
 
+
+
+	if (!keepC) remove(outputFileName);
 
 	free(defaultOutputName);//Can't be freed sooner as it may be pointed to by part of the gcc call
 	free(gccCall);
@@ -157,11 +158,17 @@ void createFileHead(FILE *outFile, uint64_t tapeLen){
 	fputs("static uint8_t *tapeEnd;\n", outFile);
 	fprintf(outFile, "static uint64_t tapeLen = %lu;\n", tapeLen);
 	fputs("static uint8_t *activeCell;\n", outFile);
+	fputs("static uint8_t fileActive = 0;", outFile);
+	fputs("static FILE *file;\n", outFile);
 	//Function prototypes just because it's good practise
 	fputs("static void incPoint();\n", outFile);//>
 	fputs("static void decPoint();\n", outFile);//<
 	fputs("static void incVal();\n", outFile);//+
 	fputs("static void decVal();\n", outFile);//-
+	fputs("static void fileOC();\n", outFile);//#
+	fputs("static void fileWrite();\n", outFile);//; Cannot use fputc because specification says that stream position does not move
+	fputs("static void fileRead();\n", outFile);//:. Could use fgetc in main, but I prefer this. When/if I optimise the compiler, I may change that. Besides, EOF
+							//must return 0 according to the spec.
 	//[ ] , and . will be handled in main as while , getchar and putchar
 	fputs("int main(int argc, char *argv[]){\n", outFile);
 		fputs("\ttapeStart = calloc(tapeLen, 1);\n", outFile);
@@ -198,6 +205,15 @@ void createFileBody(FILE *sourceFile, FILE *outFile){
 				break;
 			case ']':
 				fputs("\t}\n", outFile);
+				break;
+			case '#':
+				fputs("\tfileOC();\n", outFile);
+				break;
+			case ';':
+				fputs("\tfileWrite();\n", outFile);
+				break;
+			case ':':
+				fputs("\tfileRead();\n", outFile);
 			default:
 				break;
 
@@ -236,5 +252,26 @@ void createFileFoot(FILE *outFile){
 	fputs("static void decVal(){\n", outFile);
 		fputs("\t--*activeCell;\n", outFile);
 	fputs("}\n", outFile);
-
+	fputs("static void fileOC(){\n", outFile);
+		fputs("\tif (!fileActive){\n", outFile);
+			fputs("\t\tfileActive = 1;\n", outFile);
+			fputs("\t\tfile = fopen(activeCell, \"r+\");\n", outFile);
+			fputs("\t\tif(file == NULL){\n", outFile);
+				fputs("\t\t\tfile = fopen(activeCell, \"w+\");\n", outFile);
+			fputs("\t\t}\n", outFile);
+		fputs("\t} else{\n", outFile);
+			fputs("\t\tfileActive = 0;\n", outFile);
+			fputs("\t\tfclose(file);\n", outFile);
+		fputs("\t}\n", outFile);
+	fputs("}\n", outFile);
+	fputs("static void fileWrite(){\n", outFile);//If called when no file is open, simply does nothing
+		fputs("\tif(file != NULL){\n", outFile);
+			fputs("\t\tfputc(*activeCell, file);\n", outFile);
+			fputs("\t\tfseek(file, -1L, SEEK_CUR);\n", outFile);//Move back to the same stream position as when fileWrite() was called
+		fputs("\t}\n", outFile);
+	fputs("}\n", outFile);
+	fputs("static void fileRead(){\n", outFile);//Returns 0 if no file is open to avoid segfaults.
+		fputs("\tint readChar = file == NULL? 0 : fgetc(file);\n", outFile);
+		fputs("\t*activeCell = readChar == EOF? 0 : readChar;\n", outFile);
+	fputs("}\n", outFile);
 }
