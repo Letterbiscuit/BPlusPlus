@@ -27,8 +27,9 @@ int main(int argc, char *argv[]){
 	}
 	//Variables defining the compiler's behaviour
 	uint8_t keepC = 0;
-	char *outName = malloc(1);//Malloc 1s just to put the values on the heap rather than the stack
-	char *gccArgs = malloc(1);
+	char *outName = calloc(1, 1);//calloc 1 is just to put the values on the heap rather than the stack
+	char *gccArgs = calloc(1, 1024);//1024 character gcc arg buffer. Using callocs here so that all values are initialised
+
 	uint8_t defaultOutName = 1;
 	uint64_t tapeLen = 30000;//Because it can be reassigned with strtol, it must be able to fit a long value. Can store values greater than available
 				 //memory, so if you want to run brainf**k++ on a supercomputer, that's your problem, not mine
@@ -48,7 +49,7 @@ int main(int argc, char *argv[]){
 						i++;//Skip over the next argument as it is a file name
 					}
 					else{
-						puts("Error: Invalid file name");
+						puts("Error: Invalid output file name");
 						free(outName);
 						free(gccArgs);
 						return 1;
@@ -69,7 +70,7 @@ int main(int argc, char *argv[]){
 				else if (!memcmp(argv[i], "-g", 3)){
 					reservedForGcc = 1;//If you've called -g, the rest of the args must belong to gcc
 					if(argv[i+1]){
-						gccArgs = realloc(gccArgs, sizeof(argv[i+1]));
+						strcpy(gccArgs, argv[i+1]);
 						i++;
 					}
 					else{
@@ -82,24 +83,33 @@ int main(int argc, char *argv[]){
 			}
 
 		}else{
-			gccArgs = realloc(gccArgs, sizeof(gccArgs) + sizeof(argv[i]) + 1);//+1 for the space
-			gccArgs = strcat(gccArgs, " ");//Put spaces between each arg so that gcc understands. Valgrind gets angry here.
-							//Reason: conditional move... depends on uninitialised value(s), no actual problem
-			gccArgs = strcat(gccArgs, argv[i]);//Then stick the latest arg on the end
+			strcat(gccArgs, " ");//Put spaces between each arg so that gcc understands
+			strcat(gccArgs, argv[i]);//Then stick the latest arg on the end
 
 		}
 	}
 
 
+	char *defaultOutputName = malloc(sizeof(argv[1]) + 2);
+
+	strcpy(defaultOutputName, argv[1]);
+	strcat(defaultOutputName, ".c");
+
+	char *outputFileName = defaultOutName? defaultOutputName : outName;
+
+
 	FILE *sourceFile = fopen(argv[1], "r");
-	FILE *outFile = fopen(defaultOutName? strcat(argv[1], ".c") : outName, "w+");
-	if(!sourceFile){
+	printf("target file: %s\n", argv[1]);
+	if(sourceFile == NULL){
 		puts("Error: Invalid source file");
-		fclose(outFile);
 		free(outName);
 		free(gccArgs);
 		return 1;
 	}
+
+
+	FILE *outFile = fopen(outputFileName, "w+");
+
 	createFileHead(outFile, tapeLen);
 	createFileBody(sourceFile, outFile);
 	createFileFoot(outFile);
@@ -107,10 +117,29 @@ int main(int argc, char *argv[]){
 	//We're done with the files. Close source to reduce memory usage, close out to commit changes
 	fclose(sourceFile);
 	fclose(outFile);
-	char *gccCall = malloc(3 + sizeof(gccArgs));
-	gccCall = "gcc";
-	gccCall = strcat(gccCall, gccArgs);//Segfault here
 
+
+	char *gccRoot = "gcc ";//Space at the end to separate args and the root
+	char *gccCall = malloc(1024);
+	char *gccBuffer = calloc(256, 1);
+
+	strcpy(gccCall, gccRoot);//Build up the gcc system
+	strcat(gccCall, outputFileName);
+	strcat(gccCall, " -o ");//Separate the dynamic args and the file name, declare output file
+	strncpy(gccBuffer, outputFileName, sizeof(outputFileName) - 4);//-4 because of slightly generous buffer, takes off file extension
+	printf("gccBuffer: %s\n", gccBuffer);
+	strcat(gccCall, gccBuffer);
+	strcat(gccCall, gccArgs);
+
+	printf("gcc call: %s\n", gccCall);
+
+	system(gccCall);
+
+
+
+	free(defaultOutputName);//Can't be freed sooner as it may be pointed to by part of the gcc call
+	free(gccCall);
+	free(gccBuffer);
 	free(outName);
 	free(gccArgs);
 	return 0;
