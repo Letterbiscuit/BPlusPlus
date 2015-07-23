@@ -18,11 +18,15 @@ int main(int argc, char *argv[]){
 		return 1;
 	}else if(!memcmp(argv[1], "-h", 3)){//Always checking to 3 for standalone options to ensure they're not part of a block
 		printf("Usage: %s SOURCE/-h [-options]\n", argv[0]);
-		puts("Options: -o NAME : Name of output file, must be isolated");
+		puts("Options: -o NAME : Name of output file, must be \
+isolated");
 		puts("         -c : Keep translated C file");
-		puts("         -h : Print this text (Must be only argument)");
-		puts("         -m NUMBER : Length of tape /bytes (default: 30000), must be isolated");
-		puts("         -g OPTIONS : Designate all arguments after this point as options for gcc");
+		puts("         -h : Print this text (Must be only \
+argument)");
+		puts("         -m NUMBER : Length of tape /bytes \
+(default: 30000), must be isolated");
+		puts("         -g OPTIONS : Designate all arguments \
+after this point as options for gcc");
 		return 0;
 	}
 	//Variables defining the compiler's behaviour
@@ -44,8 +48,10 @@ int main(int argc, char *argv[]){
 				if(!memcmp(argv[i], "-o", 3)){
 					defaultOutName = 0;
 					if(argv[i+1]){
-						outName = realloc(outName, sizeof(argv[i+1]));
-						outName = strcpy(outName, argv[i+1]);
+						outName = realloc(outName,
+						    sizeof(argv[i+1]));
+						outName = strcpy(outName,
+						    argv[i+1]);
 						i++;//Skip over the next argument as it is a file name
 					}
 					else{
@@ -57,7 +63,8 @@ int main(int argc, char *argv[]){
 				}
 				else if(!memcmp(argv[i], "-m", 3)){
 					char *storageChar;//For strto to store stuff
-					tapeLen = strtol(argv[i+1], &storageChar, 10);
+					tapeLen = strtol(argv[i+1],
+						&storageChar, 10);
 					if(!tapeLen || errno){
 						puts("Error: Invalid tape length");
 						free(outName);
@@ -66,11 +73,13 @@ int main(int argc, char *argv[]){
 					}
 					i++;//Skip over the next argument as it is the memory size
 
-				}else if (memchr(argv[i], 'c', 5)) keepC = 1;//Only checks 5 bytes as there are only 5 valid args and most shouldn't be together
+				}else if (memchr(argv[i], 'c', 5))
+					 keepC = 1;//Only checks 5 bytes as there are only 5 valid args and most shouldn't be together
 				else if (!memcmp(argv[i], "-g", 3)){
 					reservedForGcc = 1;//If you've called -g, the rest of the args must belong to gcc
 					if(argv[i+1]){
-						strcpy(gccArgs, argv[i+1]);
+						strcpy(gccArgs,
+							argv[i+1]);
 						i++;
 					}
 					else{
@@ -95,7 +104,8 @@ int main(int argc, char *argv[]){
 	strcpy(defaultOutputName, argv[1]);
 	strcat(defaultOutputName, ".c");
 
-	char *outputFileName = defaultOutName? defaultOutputName : outName;
+	char *outputFileName = defaultOutName? defaultOutputName :
+		outName;
 
 
 	FILE *sourceFile = fopen(argv[1], "r");
@@ -153,28 +163,50 @@ void createFileHead(FILE *outFile, uint64_t tapeLen){
 	fputs("#include <stdint.h>\n", outFile);//So bf can use uint8_t
 	fputs("#include <stdlib.h>\n", outFile);//So the tape can be calloc-ed rather than kept in the call stack - less dangerous in case of overflow
 						//calloc is used here to initialise to 0
+	fputs("#include <string.h>\n", outFile);
+	//These things are needed for networking
+	fputs("#include <unistd.h>\n", outFile);
+	fputs("#include <sys/types.h>\n", outFile);
+	fputs("#include <sys/socket.h>\n", outFile);
+	fputs("#include <netinet/in.h>\n", outFile);
+	fputs("#include <netdb.h>\n", outFile);
+
 	//Globally visible tape start, end, length and current cell
 	fputs("static uint8_t *tapeStart;\n", outFile);
 	fputs("static uint8_t *tapeEnd;\n", outFile);
 	fprintf(outFile, "static uint64_t tapeLen = %lu;\n", tapeLen);
 	fputs("static uint8_t *activeCell;\n", outFile);
-	fputs("static uint8_t fileActive = 0;", outFile);
+	//Variables pertaining to file IO
+	fputs("static uint8_t fileActive = 0;\n", outFile);
 	fputs("static FILE *file;\n", outFile);
+	//Variables pertaining to networking
+	fputs("static uint8_t sockActive = 0;\n", outFile);
+	fputs("static int sockFd;\n", outFile);
+	fputs("static uint16_t portNum;\n", outFile);//Spec says port is
+						//read from two bytes
+	fputs("static struct sockaddr_in server_addr;\n", outFile);
+	fputs("static struct hostent *server;\n", outFile);
 	//Function prototypes just because it's good practise
 	fputs("static void incPoint();\n", outFile);//>
 	fputs("static void decPoint();\n", outFile);//<
 	fputs("static void incVal();\n", outFile);//+
 	fputs("static void decVal();\n", outFile);//-
-	fputs("static void fileOC();\n", outFile);//#
+	fputs("static void fileToggle();\n", outFile);//#
 	fputs("static void fileWrite();\n", outFile);//; Cannot use fputc because specification says that stream position does not move
 	fputs("static void fileRead();\n", outFile);//:. Could use fgetc in main, but I prefer this. When/if I optimise the compiler, I may change that. Besides, EOF
 							//must return 0 according to the spec.
+	
+	fputs("static void sockToggle();\n", outFile);
+	//
 	//[ ] , and . will be handled in main as while , getchar and putchar
 	fputs("int main(int argc, char *argv[]){\n", outFile);
 		fputs("\ttapeStart = calloc(tapeLen, 1);\n", outFile);
 		fputs("\ttapeEnd = tapeStart + tapeLen-1;\n", outFile);
 		fputs("\tactiveCell = tapeStart;\n", outFile);
-
+		fputs("\tmemset(&server_addr, 0,\
+sizeof(server_addr));\n", outFile);//Make sure that leftover bytes don't
+				//mess things up
+		fputs("\tserver_addr.sin_family = AF_INET;\n", outFile);
 }
 
 
@@ -195,10 +227,12 @@ void createFileBody(FILE *sourceFile, FILE *outFile){
 				fputs("\tdecVal();\n", outFile);
 				break;
 			case ',':
-				fputs("\t*activeCell = getchar();\n", outFile);
+				fputs("\t*activeCell = getchar();\n",
+					outFile);
 				break;
 			case '.':
-				fputs("\tputchar(*activeCell);\n", outFile);
+				fputs("\tputchar(*activeCell);\n",
+					outFile);
 				break;
 			case '[':
 				fputs("\twhile(*activeCell){\n", outFile);
@@ -207,13 +241,17 @@ void createFileBody(FILE *sourceFile, FILE *outFile){
 				fputs("\t}\n", outFile);
 				break;
 			case '#':
-				fputs("\tfileOC();\n", outFile);
+				fputs("\tfileToggle();\n", outFile);
 				break;
 			case ';':
 				fputs("\tfileWrite();\n", outFile);
 				break;
 			case ':':
 				fputs("\tfileRead();\n", outFile);
+				break;
+			case '%':
+				fputs("\tsockToggle();\n", outFile);
+				break;
 			default:
 				break;
 
@@ -252,12 +290,14 @@ void createFileFoot(FILE *outFile){
 	fputs("static void decVal(){\n", outFile);
 		fputs("\t--*activeCell;\n", outFile);
 	fputs("}\n", outFile);
-	fputs("static void fileOC(){\n", outFile);
+	fputs("static void fileToggle(){\n", outFile);
 		fputs("\tif (!fileActive){\n", outFile);
 			fputs("\t\tfileActive = 1;\n", outFile);
 			fputs("\t\tfile = fopen(activeCell, \"r+\");\n", outFile);
 			fputs("\t\tif(file == NULL){\n", outFile);
 				fputs("\t\t\tfile = fopen(activeCell, \"w+\");\n", outFile);
+			fputs("\t\t*activeCell = file == NULL? \
+0xFF : 0x00;\n", outFile);
 			fputs("\t\t}\n", outFile);
 		fputs("\t} else{\n", outFile);
 			fputs("\t\tfileActive = 0;\n", outFile);
@@ -274,4 +314,33 @@ void createFileFoot(FILE *outFile){
 		fputs("\tint readChar = file == NULL? 0 : fgetc(file);\n", outFile);
 		fputs("\t*activeCell = readChar == EOF? 0 : readChar;\n", outFile);
 	fputs("}\n", outFile);
+
+
+
+	fputs("static void sockToggle(){\n", outFile);
+		fputs("\tif(!sockActive){\n", outFile);
+			fputs("\t\tuint8_t success = 0;\n", outFile);
+			fputs("\t\tuint8_t *startOfPort;\n", outFile);
+			fputs("\t\tserver = gethostbyname(activeCell);\n",
+				outFile);
+			fputs("\t\tfor(startOfPort = activeCell;\
+*startOfPort; startOfPort++){/*Do nothing*/}\n", outFile);
+			fputs("\t\tbcopy((char *) server->h_addr,\
+ (char *) &server_addr.sin_addr.s_addr, server->h_length);\n", outFile);
+			fputs("\t\tserver_addr.sin_port =\
+ htons((uint16_t) *(++startOfPort));\n", outFile);
+			fputs("success = connect(sockFd, (struct \
+sockaddr*) &server_addr, sizeof(server_addr));\n", outFile);
+			fputs("*activeCell = success? 0xFF : 0x00;\n",
+				outFile);
+			fputs("sockActive = !success;\n", outFile);
+		fputs("\t}else{\n", outFile);
+			fputs("\t\tclose(sockFd);\n", outFile);
+			fputs("\t\tsockActive = 0;\n", outFile);
+		fputs("\t}\n", outFile);
+	fputs("}\n", outFile);
+
+
+
+
 }
